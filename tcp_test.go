@@ -6,6 +6,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"testing"
+	"time"
 )
 
 //const testPortStream = "127.0.0.1:3456"
@@ -93,30 +94,30 @@ func handleRequest(conn net.Conn) {
 	}
 }
 
-func TestDialTCPStream(t *testing.T) {
-	conn, err := Dial("tcp", testPortStream)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-
-	addr, err := net.ResolveTCPAddr("tcp", testPortStream)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	n, err := conn.WriteTo([]byte("abc"), addr)
-	if err != nil {
-		t.Fatal(n, err)
-	}
-
-	buf := make([]byte, 1024)
-	if n, addr, err := conn.ReadFrom(buf); err != nil {
-		t.Fatal(n, addr, err)
-	} else {
-		log.Println(string(buf[:n]), "from:", addr)
-	}
-}
+//func TestDialTCPStream(t *testing.T) {
+//	conn, err := Dial("tcp", testPortStream)
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//	defer conn.Close()
+//
+//	addr, err := net.ResolveTCPAddr("tcp", testPortStream)
+//	if err != nil {
+//		t.Fatal(err)
+//	}
+//
+//	n, err := conn.WriteTo([]byte("abc"), addr)
+//	if err != nil {
+//		t.Fatal(n, err)
+//	}
+//
+//	buf := make([]byte, 1024)
+//	if n, addr, err := conn.ReadFrom(buf); err != nil {
+//		t.Fatal(n, addr, err)
+//	} else {
+//		log.Println(string(buf[:n]), "from:", addr)
+//	}
+//}
 
 func TestDialToTCPPacket(t *testing.T) {
 	conn, err := Dial("tcp", portRemotePacket)
@@ -136,13 +137,26 @@ func TestDialToTCPPacket(t *testing.T) {
 	}
 	log.Println("written")
 
+	go func() {
+		for {
+			n, err := conn.WriteTo([]byte("abc"), addr)
+			if err != nil {
+				t.Fatal(n, err)
+			}
+			log.Println("written")
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
 	buf := make([]byte, 1024)
 	log.Println("readfrom buf")
-	if n, addr, err := conn.ReadFrom(buf); err != nil {
+
+	n, taddr, err := conn.ReadFrom(buf)
+	if err != nil {
 		log.Println(err)
-		t.Fatal(n, addr, err)
+		t.Fatal(n, taddr, err)
 	} else {
-		log.Println(string(buf[:n]), "from:", addr)
+		log.Println(string(buf[:n]), "from:", taddr)
 	}
 
 	log.Println("complete")
@@ -165,29 +179,29 @@ func TestSettings(t *testing.T) {
 	}
 }
 
-func BenchmarkEcho(b *testing.B) {
-	conn, err := Dial("tcp", portRemotePacket)
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer conn.Close()
-
-	addr, err := net.ResolveTCPAddr("tcp", portRemotePacket)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	buf := make([]byte, 1024)
-	b.ReportAllocs()
-	b.SetBytes(int64(len(buf)))
-	for i := 0; i < b.N; i++ {
-		n, err := conn.WriteTo(buf, addr)
-		if err != nil {
-			b.Fatal(n, err)
-		}
-
-		if n, addr, err := conn.ReadFrom(buf); err != nil {
-			b.Fatal(n, addr, err)
-		}
-	}
-}
+//func BenchmarkEcho(b *testing.B) {
+//	conn, err := Dial("tcp", portRemotePacket)
+//	if err != nil {
+//		b.Fatal(err)
+//	}
+//	defer conn.Close()
+//
+//	addr, err := net.ResolveTCPAddr("tcp", portRemotePacket)
+//	if err != nil {
+//		b.Fatal(err)
+//	}
+//
+//	buf := make([]byte, 1024)
+//	b.ReportAllocs()
+//	b.SetBytes(int64(len(buf)))
+//	for i := 0; i < b.N; i++ {
+//		n, err := conn.WriteTo(buf, addr)
+//		if err != nil {
+//			b.Fatal(n, err)
+//		}
+//
+//		if n, addr, err := conn.ReadFrom(buf); err != nil {
+//			b.Fatal(n, addr, err)
+//		}
+//	}
+//}

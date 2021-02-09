@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -15,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coreos/go-iptables/iptables"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
@@ -64,11 +62,11 @@ type TCPConn struct {
 	flowsLock sync.Mutex
 
 	// iptables
-	iptables *iptables.IPTables
-	iprule   []string
-
-	ip6tables *iptables.IPTables
-	ip6rule   []string
+	//iptables *iptables.IPTables
+	//iprule   []string
+	//
+	//ip6tables *iptables.IPTables
+	//ip6rule   []string
 
 	// deadlines
 	readDeadline  atomic.Value
@@ -305,12 +303,12 @@ func (conn *TCPConn) Close() error {
 		}
 
 		// delete iptable
-		if conn.iptables != nil {
-			conn.iptables.Delete("filter", "OUTPUT", conn.iprule...)
-		}
-		if conn.ip6tables != nil {
-			conn.ip6tables.Delete("filter", "OUTPUT", conn.ip6rule...)
-		}
+		//if conn.iptables != nil {
+		//	conn.iptables.Delete("filter", "OUTPUT", conn.iprule...)
+		//}
+		//if conn.ip6tables != nil {
+		//	conn.ip6tables.Delete("filter", "OUTPUT", conn.ip6rule...)
+		//}
 	})
 	return err
 }
@@ -423,28 +421,28 @@ func Dial(network, address string) (*TCPConn, error) {
 		return nil, err
 	}
 
-	if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4); err == nil {
-		rule := []string{"-m", "ttl", "--ttl-eq", "1", "-p", "tcp", "-d", raddr.IP.String(), "--dport", fmt.Sprint(raddr.Port), "-j", "DROP"}
-		if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
-			if !exists {
-				if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
-					conn.iprule = rule
-					conn.iptables = ipt
-				}
-			}
-		}
-	}
-	if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv6); err == nil {
-		rule := []string{"-m", "hl", "--hl-eq", "1", "-p", "tcp", "-d", raddr.IP.String(), "--dport", fmt.Sprint(raddr.Port), "-j", "DROP"}
-		if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
-			if !exists {
-				if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
-					conn.ip6rule = rule
-					conn.ip6tables = ipt
-				}
-			}
-		}
-	}
+	//if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4); err == nil {
+	//	rule := []string{"-m", "ttl", "--ttl-eq", "1", "-p", "tcp", "-d", raddr.IP.String(), "--dport", fmt.Sprint(raddr.Port), "-j", "DROP"}
+	//	if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
+	//		if !exists {
+	//			if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
+	//				conn.iprule = rule
+	//				conn.iptables = ipt
+	//			}
+	//		}
+	//	}
+	//}
+	//if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv6); err == nil {
+	//	rule := []string{"-m", "hl", "--hl-eq", "1", "-p", "tcp", "-d", raddr.IP.String(), "--dport", fmt.Sprint(raddr.Port), "-j", "DROP"}
+	//	if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
+	//		if !exists {
+	//			if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
+	//				conn.ip6rule = rule
+	//				conn.ip6tables = ipt
+	//			}
+	//		}
+	//	}
+	//}
 
 	// discard everything
 	go io.Copy(ioutil.Discard, tcpconn)
@@ -519,28 +517,28 @@ func Listen(network, address string) (*TCPConn, error) {
 	// iptables drop packets marked with TTL = 1
 	// TODO: what if iptables is not available, the next hop will send back ICMP Time Exceeded,
 	// is this still an acceptable behavior?
-	if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4); err == nil {
-		rule := []string{"-m", "ttl", "--ttl-eq", "1", "-p", "tcp", "--sport", fmt.Sprint(laddr.Port), "-j", "DROP"}
-		if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
-			if !exists {
-				if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
-					conn.iprule = rule
-					conn.iptables = ipt
-				}
-			}
-		}
-	}
-	if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv6); err == nil {
-		rule := []string{"-m", "hl", "--hl-eq", "1", "-p", "tcp", "--sport", fmt.Sprint(laddr.Port), "-j", "DROP"}
-		if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
-			if !exists {
-				if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
-					conn.ip6rule = rule
-					conn.ip6tables = ipt
-				}
-			}
-		}
-	}
+	//if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4); err == nil {
+	//	rule := []string{"-m", "ttl", "--ttl-eq", "1", "-p", "tcp", "--sport", fmt.Sprint(laddr.Port), "-j", "DROP"}
+	//	if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
+	//		if !exists {
+	//			if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
+	//				conn.iprule = rule
+	//				conn.iptables = ipt
+	//			}
+	//		}
+	//	}
+	//}
+	//if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv6); err == nil {
+	//	rule := []string{"-m", "hl", "--hl-eq", "1", "-p", "tcp", "--sport", fmt.Sprint(laddr.Port), "-j", "DROP"}
+	//	if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
+	//		if !exists {
+	//			if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
+	//				conn.ip6rule = rule
+	//				conn.ip6tables = ipt
+	//			}
+	//		}
+	//	}
+	//}
 
 	// discard everything in original connection
 	go func() {
