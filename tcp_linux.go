@@ -18,6 +18,8 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+var outputPacketMark uint16 = 0
+
 var (
 	errOpNotImplemented = errors.New("operation not implemented")
 	errTimeout          = errors.New("timeout")
@@ -42,6 +44,10 @@ type tcpFlow struct {
 	tcpHeader    layers.TCP
 }
 
+func PresetPacketMark(mark uint16) {
+	outputPacketMark = mark
+}
+
 // TCPConn defines a TCP-packet oriented connection
 type TCPConn struct {
 	die     chan struct{}
@@ -60,13 +66,6 @@ type TCPConn struct {
 	// all TCP flows
 	flowTable map[string]*tcpFlow
 	flowsLock sync.Mutex
-
-	// iptables
-	//iptables *iptables.IPTables
-	//iprule   []string
-	//
-	//ip6tables *iptables.IPTables
-	//ip6rule   []string
 
 	// deadlines
 	readDeadline  atomic.Value
@@ -102,7 +101,7 @@ func (conn *TCPConn) cleaner() {
 		for k, v := range conn.flowTable {
 			if time.Now().Sub(v.ts) > expire {
 				if v.conn != nil {
-					setTTL(v.conn, 64)
+					setMark(v.conn, 0)
 					v.conn.Close()
 				}
 				delete(conn.flowTable, k)
@@ -282,14 +281,14 @@ func (conn *TCPConn) Close() error {
 
 		// close all established tcp connections
 		if conn.tcpconn != nil { // client
-			setTTL(conn.tcpconn, 64)
+			setMark(conn.tcpconn, 0)
 			err = conn.tcpconn.Close()
 		} else if conn.listener != nil {
 			err = conn.listener.Close() // server
 			conn.flowsLock.Lock()
 			for k, v := range conn.flowTable {
 				if v.conn != nil {
-					setTTL(v.conn, 64)
+					setMark(v.conn, 0)
 					v.conn.Close()
 				}
 				delete(conn.flowTable, k)
@@ -416,33 +415,10 @@ func Dial(network, address string) (*TCPConn, error) {
 	go conn.cleaner()
 
 	// iptables
-	err = setTTL(tcpconn, 1)
+	err = setMark(tcpconn, outputPacketMark)
 	if err != nil {
 		return nil, err
 	}
-
-	//if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4); err == nil {
-	//	rule := []string{"-m", "ttl", "--ttl-eq", "1", "-p", "tcp", "-d", raddr.IP.String(), "--dport", fmt.Sprint(raddr.Port), "-j", "DROP"}
-	//	if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
-	//		if !exists {
-	//			if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
-	//				conn.iprule = rule
-	//				conn.iptables = ipt
-	//			}
-	//		}
-	//	}
-	//}
-	//if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv6); err == nil {
-	//	rule := []string{"-m", "hl", "--hl-eq", "1", "-p", "tcp", "-d", raddr.IP.String(), "--dport", fmt.Sprint(raddr.Port), "-j", "DROP"}
-	//	if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
-	//		if !exists {
-	//			if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
-	//				conn.ip6rule = rule
-	//				conn.ip6tables = ipt
-	//			}
-	//		}
-	//	}
-	//}
 
 	// discard everything
 	go io.Copy(ioutil.Discard, tcpconn)
@@ -514,32 +490,6 @@ func Listen(network, address string) (*TCPConn, error) {
 	// start cleaner
 	go conn.cleaner()
 
-	// iptables drop packets marked with TTL = 1
-	// TODO: what if iptables is not available, the next hop will send back ICMP Time Exceeded,
-	// is this still an acceptable behavior?
-	//if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv4); err == nil {
-	//	rule := []string{"-m", "ttl", "--ttl-eq", "1", "-p", "tcp", "--sport", fmt.Sprint(laddr.Port), "-j", "DROP"}
-	//	if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
-	//		if !exists {
-	//			if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
-	//				conn.iprule = rule
-	//				conn.iptables = ipt
-	//			}
-	//		}
-	//	}
-	//}
-	//if ipt, err := iptables.NewWithProtocol(iptables.ProtocolIPv6); err == nil {
-	//	rule := []string{"-m", "hl", "--hl-eq", "1", "-p", "tcp", "--sport", fmt.Sprint(laddr.Port), "-j", "DROP"}
-	//	if exists, err := ipt.Exists("filter", "OUTPUT", rule...); err == nil {
-	//		if !exists {
-	//			if err = ipt.Append("filter", "OUTPUT", rule...); err == nil {
-	//				conn.ip6rule = rule
-	//				conn.ip6tables = ipt
-	//			}
-	//		}
-	//	}
-	//}
-
 	// discard everything in original connection
 	go func() {
 		for {
@@ -549,7 +499,7 @@ func Listen(network, address string) (*TCPConn, error) {
 			}
 
 			// if we cannot set TTL = 1, the only thing reasonable is panic
-			if err := setTTL(tcpconn, 1); err != nil {
+			if err := setMark(tcpconn, outputPacketMark); err != nil {
 				panic(err)
 			}
 
@@ -564,23 +514,19 @@ func Listen(network, address string) (*TCPConn, error) {
 	return conn, nil
 }
 
-// setTTL sets the Time-To-Live field on a given connection
-func setTTL(c *net.TCPConn, ttl int) error {
+// set mask on output packet from kernel stack mask
+// used for persist iptable rule
+// mark must be preset before use Listen or Dial, or it will be set to default as 0.
+func setMark(c *net.TCPConn, mark uint16) error {
 	raw, err := c.SyscallConn()
 	if err != nil {
 		return err
 	}
-	addr := c.LocalAddr().(*net.TCPAddr)
 
-	if addr.IP.To4() == nil {
-		raw.Control(func(fd uintptr) {
-			err = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IPV6, syscall.IPV6_UNICAST_HOPS, ttl)
-		})
-	} else {
-		raw.Control(func(fd uintptr) {
-			err = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, ttl)
-		})
-	}
+	raw.Control(func(fd uintptr) {
+		err = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_MARK, int(mark))
+	})
+
 	return err
 }
 
